@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Upload Otto Catalog to KV</title>
+  <style>
+    body { font-family: monospace; max-width: 600px; margin: 60px auto; padding: 20px; background: #0f0f0f; color: #e0e0e0; }
+    h2 { color: #FFEF00; }
+    button { background: #1D2D50; color: #FFEF00; border: 1px solid #FFEF00; padding: 12px 28px; font-size: 16px; cursor: pointer; border-radius: 4px; margin-top: 16px; }
+    button:hover { background: #FFEF00; color: #1D2D50; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #status { margin-top: 24px; padding: 16px; background: #1a1a1a; border-radius: 4px; white-space: pre-wrap; min-height: 60px; font-size: 14px; line-height: 1.6; }
+    .ok  { color: #4caf50; }
+    .err { color: #f44336; }
+    input[type=file] { display: none; }
+    label.filebtn { display: inline-block; background: #222; color: #aaa; border: 1px solid #444; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin-bottom: 8px; }
+    label.filebtn:hover { border-color: #FFEF00; color: #FFEF00; }
+    #filename { font-size: 13px; color: #888; margin-left: 10px; }
+  </style>
+</head>
+<body>
+  <h2>CBC — Upload Otto Catalog to KV</h2>
+  <p>This page uploads <strong>otto_product_map.json</strong> directly to your Cloudflare Worker's KV storage.</p>
+
+  <label class="filebtn" for="fileInput">📂 Choose otto_product_map.json</label>
+  <span id="filename">No file selected</span>
+  <input type="file" id="fileInput" accept=".json">
+  <br>
+  <button id="uploadBtn" disabled>⬆ Upload to KV</button>
+
+  <div id="status">Waiting for file selection...</div>
+
+  <script>
+    const WORKER_URL = "https://cbc-otto-sync.cap-customizer-api.workers.dev/upload-catalog";
+    let fileData = null;
+
+    document.getElementById("fileInput").addEventListener("change", function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      document.getElementById("filename").textContent = file.name + " (" + (file.size / 1024).toFixed(1) + " KB)";
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        try {
+          fileData = ev.target.result;
+          JSON.parse(fileData); // validate JSON
+          document.getElementById("status").innerHTML = '<span class="ok">✅ File loaded and validated. Ready to upload.</span>';
+          document.getElementById("uploadBtn").disabled = false;
+        } catch(err) {
+          document.getElementById("status").innerHTML = '<span class="err">❌ Invalid JSON: ' + err.message + '</span>';
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    document.getElementById("uploadBtn").addEventListener("click", async function() {
+      if (!fileData) return;
+      const btn = document.getElementById("uploadBtn");
+      const status = document.getElementById("status");
+      btn.disabled = true;
+      btn.textContent = "⏳ Uploading...";
+      status.innerHTML = "Sending catalog to Cloudflare KV...";
+      try {
+        const res = await fetch(WORKER_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: fileData,
+        });
+        const text = await res.text();
+        if (res.ok) {
+          status.innerHTML = '<span class="ok">' + text + '</span>\n\nNext step → visit:\nhttps://cbc-otto-sync.cap-customizer-api.workers.dev/test-otto';
+          btn.textContent = "✅ Done!";
+        } else {
+          status.innerHTML = '<span class="err">❌ Upload failed (HTTP ' + res.status + '):\n' + text + '</span>';
+          btn.disabled = false;
+          btn.textContent = "⬆ Retry Upload";
+        }
+      } catch(err) {
+        status.innerHTML = '<span class="err">❌ Network error: ' + err.message + '</span>';
+        btn.disabled = false;
+        btn.textContent = "⬆ Retry Upload";
+      }
+    });
+  </script>
+</body>
+</html>
